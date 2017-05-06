@@ -38,11 +38,6 @@ int main()
   uWS::Hub h;
 
   PID pid;
-  // TODO: Initialize the pid variable.
-  // reduce parameter valuess given in the class
-  // to reduce oscillation
-  double factor = 2.;
-  pid.Init(0.2/factor, 0.004/factor, 3/factor); 
 
   /***************** EXPLAINATION OF PARAMETER CHOICES *****************/
   // Starting from the values given in the class, which
