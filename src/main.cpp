@@ -12,6 +12,11 @@ constexpr double pi() { return M_PI; }
 double deg2rad(double x) { return x * pi() / 180; }
 double rad2deg(double x) { return x * 180 / pi(); }
 
+// Force a value (e.g. steering) into a range (e.g., -1 to 1)
+double value_in_range(double value, double lower, double upper) {
+  return fmax(lower, fmin(value, upper));
+}
+
 // Checks if the SocketIO event has JSON data.
 // If there is data the JSON object in string format will be returned,
 // else the empty string "" will be returned.
@@ -34,6 +39,34 @@ int main()
 
   PID pid;
   // TODO: Initialize the pid variable.
+  // reduce parameter valuess given in the class
+  // to reduce oscillation
+  double factor = 2.;
+  pid.Init(0.2/factor, 0.004/factor, 3/factor); 
+
+  /***************** EXPLAINATION OF PARAMETER CHOICES *****************/
+  // Starting from the values given in the class, which
+  // is 0.2, 0.004, 3.
+  // Based on visual observations in simulations:
+  // 1. `P` controls how fast the syesm reacts to error. Having a high P means you
+  // can even drive in a wiggly track. However, high P tends to make oscillations
+  // worse, specially when there is "noise" in driving. 
+  // 2. `I` helps when the car has deviated a lot - `I` control will eventually bring
+  // it back. However, it can amplify the oscillations because the error builds up.
+  // 3. `D` helps reduce the oscillations caused by `P` and `I`. However if `D` is too
+  // big, it will make the car very rigid (e.g., hard to control when turning).
+
+  // So in general, 
+  // - Choose a reasonable `P` first based on the complexity of track and car speed.
+  // - Starting from a small `I`. If the driving is not good enough for some segments,
+  // increase the `I` value until it satisfies. 
+  // - Use `D` to ahieve a balance between oscillation and driving smoothness.
+  pid.Init(0.11, 0.0075, 1.5);
+
+  // USE A SMALLER VALUE FOR COMFORTABLE RIDE with throttle = 0.3
+  // pid.Init(0.1, 0.002, 1.5); 
+  
+
 
   h.onMessage([&pid](uWS::WebSocket<uWS::SERVER> ws, char *data, size_t length, uWS::OpCode opCode) {
     // "42" at the start of the message means there's a websocket message event.
@@ -50,20 +83,39 @@ int main()
           double cte = std::stod(j[1]["cte"].get<std::string>());
           double speed = std::stod(j[1]["speed"].get<std::string>());
           double angle = std::stod(j[1]["steering_angle"].get<std::string>());
-          double steer_value;
+          
           /*
           * TODO: Calcuate steering value here, remember the steering value is
           * [-1, 1].
           * NOTE: Feel free to play around with the throttle and speed. Maybe use
           * another PID controller to control the speed!
           */
+          pid.UpdateError(cte);
+          double steer_value = value_in_range(
+            /*value=*/-1. * pid.TotalError(),
+            /*lower=*/ -1,
+            /*upper=*/ 1
+          );
+
+          // Instead of using another PID for throttle, using a heuristic
+          // rule to set throttle for greater speed!
+          // maximum throttle
+          double throttle_max = 0.65;
+          // how sensitive the throttle is to the change of steering
+          double throttle_granularity = 3.5;
+          // mapping from [-1,1] to [0,1], we only care about absolute steering
+          double steer_abs = fabs(steer_value);
+          // adjust throttle based on steering:
+          // the bigger steering, the smaller throttle
+          double throttle = 1. / (1/throttle_max + throttle_granularity*steer_abs);
+          
           
           // DEBUG
           std::cout << "CTE: " << cte << " Steering Value: " << steer_value << std::endl;
 
           json msgJson;
           msgJson["steering_angle"] = steer_value;
-          msgJson["throttle"] = 0.3;
+          msgJson["throttle"] = throttle;//0.3;
           auto msg = "42[\"steer\"," + msgJson.dump() + "]";
           std::cout << msg << std::endl;
           ws.send(msg.data(), msg.length(), uWS::OpCode::TEXT);
